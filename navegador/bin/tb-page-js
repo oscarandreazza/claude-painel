@@ -1,0 +1,24 @@
+#!/bin/sh
+# Roda um script de ../assets/ na página do painel, trocando $DATA pelo JSON
+# dado. Fala direto com o agent-browser (como o tb-net): não acende o
+# indicador de agente na aba nem vira evento do card. Parte do plugin navegador.
+#
+# Uso: tb-page-js <caption|endcard> '<json>'
+command -v jq >/dev/null 2>&1 || exit 0
+here=$(cd "$(dirname "$0")" && pwd)
+export AGENT_BROWSER_SOCKET_DIR="$HOME/.tbab"
+root=$(dirname "$(dirname "$(readlink -f "$(command -v terminal-browser)")")")
+AB="$root/agent-browser/bin/agent-browser"
+case "$1" in caption|endcard) ;; *) echo "uso: tb-page-js <caption|endcard> '<json>'" >&2; exit 1 ;; esac
+tpl="$here/../assets/$1.js"
+data="${2:-null}"
+[ -f "$tpl" ] || { echo "sem script $tpl" >&2; exit 1; }
+
+# TB_KEY: o navegador desta sessão (o plugin acha pelo tty); sem ele, o
+# primeiro da aba do terminal.
+key="${TB_KEY:-}"
+[ -z "$key" ] && key=$(terminal-browser ls --json 2>/dev/null | jq -r '[.browsers[] | select(.inCurrentTab)][0].key // empty')
+[ -z "$key" ] && exit 0
+
+js=$(jq -rn --rawfile tpl "$tpl" --arg data "$data" '$tpl | sub("\\$DATA"; $data)')
+"$AB" --session "terminal-browser-$key" eval "$js" >/dev/null 2>&1

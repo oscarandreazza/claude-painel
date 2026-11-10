@@ -1,0 +1,4 @@
+{
+  "description": "Navegador (terminal-browser) no painel do Claude Code, com faixa de status das ações do agente",
+  "modules": ["./register.tsx"]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "vscode-live",
+  "version": "0.1.0",
+  "description": "/vscode: VS Code web no painel do navegador, na pasta da sessão; a aba do arquivo que o Claude edita anima e as linhas mudadas acendem.",
+  "author": { "name": "Oscar Andreazza" },
+  "license": "MIT"
+}

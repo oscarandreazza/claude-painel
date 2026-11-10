@@ -1,0 +1,204 @@
+#!/bin/sh
+# Wrapper do agent-browser do terminal-browser, parte do plugin navegador.
+# O plugin liga ele pondo TERMINAL_BROWSER_AGENT=<este arquivo> nos comandos
+# `terminal-browser action` do agente.
+#
+# 1. Socket: o padrão fica em ~/.local/state/terminal-browser-<hash>/agent-browser/,
+#    que com usuário de nome longo passa do limite de 103 bytes de socket Unix
+#    no macOS. Aqui o diretório é curto (~/.tbab).
+# 2. Feedback visual: antes de clicar/preencher/etc., desenha na página o cursor
+#    "Claude", o contorno com o nome da ação e um selo numerado que fica (o
+#    rastro). O desenho mora em ../assets/feedback.js.
+# 3. Digitação visível: `fill` com texto curto vira digitação letra por letra
+#    (com python3; sem ele, preenche de uma vez).
+# 4. Eventos: cada ação grava uma linha em ~/.tbab/<navegador>/events.jsonl com
+#    o resultado real; o card de status do plugin lê isso pra avançar passo a
+#    passo. Uma pasta por navegador: duas sessões não misturam os cards.
+# Falha no visual nunca bloqueia a ação. Precisa de jq pro visual e os eventos.
+#
+# Chamado pelo terminal-browser como: --session <s> [--cdp <porta>] <cmd> [args...]
+# Resolve o binário pelo link do brew, pra sobreviver a `terminal-browser upgrade`.
+here=$(cd "$(dirname "$0")" && pwd)
+ASSETS="$here/../assets"
+export AGENT_BROWSER_SOCKET_DIR="$HOME/.tbab"
+root=$(dirname "$(dirname "$(readlink -f "$(command -v terminal-browser)")")")
+AB="$root/agent-browser/bin/agent-browser"
+FEEDBACK_JS="$ASSETS/feedback.js"
+TYPE_MAX=60
+# Sem jq não há visual nem eventos: só repassa a ação.
+command -v jq >/dev/null 2>&1 || exec "$AB" "$@"
+
+# Pula as flags globais pra achar o comando e o seletor.
+session=""; next_is=""; cmd=""; i=0
+for a in "$@"; do
+  i=$((i + 1))
+  if [ "$next_is" = session ]; then session="$a"; next_is=""; continue; fi
+  if [ "$next_is" = skip ]; then next_is=""; continue; fi
+  case "$a" in
+    --session) next_is=session; continue ;;
+    --cdp) next_is=skip; continue ;;
+  esac
+  cmd="$a"; break
+done
+eval "sel=\${$((i + 1)):-}"
+eval "val=\${$((i + 2)):-}"
+
+# Pasta do navegador: a sessão é "terminal-browser-<chave>". O plugin lê e
+# escreve na mesma (eventos e legenda).
+key="${session#terminal-browser-}"
+case "$key" in ''|*/*|*..*) dir="$HOME/.tbab" ;; *) dir="$HOME/.tbab/$key" ;; esac
+EVENTS="$dir/events.jsonl"
+CAPTION_TXT="$dir/caption.txt"
+
+case "$cmd" in
+  click|dblclick) verb="clicar" ;;
+  fill)           verb="preencher" ;;
+  type)           verb="digitar" ;;
+  hover)          verb="passar o mouse" ;;
+  check)          verb="marcar" ;;
+  uncheck)        verb="desmarcar" ;;
+  select)         verb="selecionar" ;;
+  *)              verb="" ;;
+esac
+
+# Legenda na página (../assets/caption.js): o título é a intenção da etapa, que
+# o plugin grava em caption.txt na pasta do navegador; o subtítulo é a ação de
+# agora. Reaparece sozinha se a página mudou.
+CAPTION_JS="$ASSETS/caption.js"
+caption() {
+  [ -n "$session" ] && [ -f "$CAPTION_JS" ] && [ -s "$CAPTION_TXT" ] || return 0
+  data=$(jq -nc --rawfile t "$CAPTION_TXT" --arg s "$1" '{title: ($t | rtrimstr("\n")), sub: $s}')
+  cjs=$(jq -rn --rawfile tpl "$CAPTION_JS" --arg data "$data" '$tpl | sub("\\$DATA"; $data)')
+  "$AB" --session "$session" eval "$cjs" >/dev/null 2>&1
+}
+
+# `scroll down 600` do agente vira rolagem suave.
+if [ "$cmd" = scroll ] && [ -n "$session" ]; then
+  px="${val:-500}"
+  case "$sel" in
+    up) js_scroll="scrollBy({ top: -$px, behavior: 'smooth' })" ;;
+    down) js_scroll="scrollBy({ top: $px, behavior: 'smooth' })" ;;
+    left) js_scroll="scrollBy({ left: -$px, behavior: 'smooth' })" ;;
+    right) js_scroll="scrollBy({ left: $px, behavior: 'smooth' })" ;;
+    *) js_scroll="" ;;
+  esac
+  case "$px" in *[!0-9]*) js_scroll="" ;; esac
+  if [ -n "$js_scroll" ]; then
+    caption "rolando a página"
+    "$AB" --session "$session" eval "$js_scroll; 1" >/dev/null 2>&1
+    sleep 0.7
+    mkdir -p "$(dirname "$EVENTS")"
+    jq -nc '{cmd: "scroll", ok: true, out: "✓ Done", target: ""}' >> "$EVENTS" 2>/dev/null
+    echo "✓ Done"
+    exit 0
+  fi
+fi
+
+# Verificações e teclas também aparecem na legenda.
+case "$cmd" in
+  wait|is) [ -n "$session" ] && { case "$sel" in ''|*[!0-9]*) caption "verificando…" ;; esac; } ;;
+  press) caption "tecla $sel" ;;
+esac
+
+if [ -n "$verb" ] && [ -n "$sel" ] && [ -n "$session" ] && [ -f "$FEEDBACK_JS" ]; then
+  case "$cmd" in fill|type|select) [ -n "$val" ] && verb="$verb: $(printf '%s' "$val" | cut -c1-28)" ;; esac
+  # Rolagem suave até o alvo (centralizado), em vez do pulo seco do
+  # scrollintoview; o scrollintoview fica de reserva se a medida falhar.
+  first=$("$AB" --session "$session" get box "$sel" --json 2>/dev/null | jq -c '.data | select(.y != null) | {y, height}' 2>/dev/null)
+  ripple=0; case "$cmd" in click|dblclick|check|uncheck) ripple=1 ;; esac
+  # Desenha pro retângulo dado ($1, JSON {x,y,width,height}); com $2 = prev,
+  # só o cursor (prévia durante a rolagem). jq troca $B, $V e $R no feedback.js.
+  draw() {
+    js=$(printf '%s' "$1" | jq -r --arg verb "$verb" --arg ripple "$ripple" --arg prev "${2:-}" --rawfile tpl "$FEEDBACK_JS" '
+      . as $d
+      | ($tpl
+         | sub("\\$B"; ({x: $d.x, y: $d.y, w: $d.width, h: $d.height, p: ($prev == "prev")} | tojson))
+         | sub("\\$V"; ($verb | tojson))
+         | sub("\\$R"; $ripple))' 2>/dev/null)
+    [ -n "$js" ] && "$AB" --session "$session" eval "$js" >/dev/null 2>&1
+    [ "${2:-}" = prev ] || caption "$verb"
+  }
+  # Rolagem suave até o alvo (centralizado). Assim que o alvo entra na tela,
+  # o cursor já vai na direção dele (prévia); contorno, holofote e selo entram
+  # quando a página para, medidos no lugar certo (com a página em movimento o
+  # ponto caía no botão vizinho).
+  vh=0
+  if [ -n "$first" ]; then
+    smooth=$(printf '%s' "$first" | jq -r '"(() => { const y = \(.y), h = \(.height); if (y < 70 || y + h > innerHeight - 130) scrollBy({ top: y + h / 2 - innerHeight / 2, behavior: \"smooth\" }); return innerHeight })()"')
+    vh=$("$AB" --session "$session" eval "$smooth" 2>/dev/null | tr -dc '0-9')
+  else
+    "$AB" --session "$session" scrollintoview "$sel" >/dev/null 2>&1
+  fi
+  box=""; tries=0; drawn=0
+  while [ "$tries" -lt 25 ]; do
+    next=$("$AB" --session "$session" get box "$sel" --json 2>/dev/null | jq -c '.data | {x, y, width, height}' 2>/dev/null)
+    if [ "$drawn" = 0 ] && [ -n "$next" ] && [ "${vh:-0}" -gt 0 ] \
+       && printf '%s' "$next" | jq -e --argjson vh "$vh" '.y >= 0 and (.y + .height) <= $vh' >/dev/null 2>&1; then
+      draw "$next" prev; drawn=1
+    fi
+    [ -n "$next" ] && [ "$next" = "$box" ] && break
+    box="$next"; tries=$((tries + 1)); sleep 0.05
+  done
+  [ -n "$box" ] && { draw "$box"; drawn=1; }
+  # O cursor leva ~0,45 s pra chegar; a onda do clique sai quando ele chega.
+  [ "$drawn" = 1 ] && sleep 0.35
+  box="{\"success\":true,\"data\":${box:-null}}"
+  # Nome legível do alvo pro card (clicar “Active” em vez de clicar @e12): o
+  # texto do elemento no centro do retângulo; num checkbox, o texto da linha.
+  case "$cmd" in click|dblclick|hover|check|uncheck)
+    target=$(printf '%s' "$box" | jq -r 'select(.success == true) | .data
+      | "(() => { const el = document.elementFromPoint(\(.x + .width / 2), \(.y + .height / 2)); if (!el) return \"\";
+          const own = (n) => n ? String(n.getAttribute(\"aria-label\") || n.innerText || n.value || n.placeholder || n.title || \"\").trim() : \"\";
+          const box = (el.type === \"checkbox\" || el.type === \"radio\") ? el.closest(\"li, tr, label\") : null;
+          return (own(box) || own(el)).split(\"\\n\")[0].slice(0, 60); })()"' 2>/dev/null)
+    [ -n "$target" ] && target=$("$AB" --session "$session" eval "$target" 2>/dev/null | jq -r '. // empty' 2>/dev/null)
+    ;;
+  esac
+  # Já com o nome: avisa o card antes da ação (clicar “30d” em vez de clicar)
+  # e põe o nome na legenda da página.
+  if [ -n "${target:-}" ]; then
+    mkdir -p "$(dirname "$EVENTS")"
+    jq -nc --arg cmd "$cmd" --arg target "$target" '{cmd: $cmd, ok: true, out: "", target: $target, phase: "start"}' >> "$EVENTS" 2>/dev/null
+    caption "$verb “$(printf '%s' "$target" | cut -c1-40)”"
+  fi
+fi
+
+# Grava o resultado da ação pro card. Chamadas internas do terminal-browser
+# (tab list, connect) não são ações do agente.
+log_event() {
+  case "$cmd" in ""|connect|network|console) return ;; tab) [ "$sel" = list ] && return ;; esac
+  mkdir -p "$(dirname "$EVENTS")"
+  jq -nc --arg cmd "$cmd" --argjson ok "$1" --arg out "$2" --arg target "${target:-}" '{cmd: $cmd, ok: $ok, out: $out, target: $target}' >> "$EVENTS" 2>/dev/null
+}
+
+err=$(mktemp "${TMPDIR:-/tmp}/tbab.XXXXXX")
+trap 'rm -f "$err"' EXIT
+
+# Digitação visível: limpa o campo e digita letra por letra (precisa de python3;
+# sem ele, o fill normal).
+len=$(printf '%s' "$val" | wc -m | tr -d ' ')
+if [ "$cmd" = fill ] && [ -n "$session" ] && [ -n "$val" ] && [ "$len" -le "$TYPE_MAX" ] \
+   && command -v python3 >/dev/null 2>&1 \
+   && [ "$(printf '%s' "$val" | wc -l | tr -d ' ')" = 0 ]; then
+  if "$AB" --session "$session" fill "$sel" "" >/dev/null 2>"$err"; then
+    printf '%s' "$val" | python3 -c '
+import subprocess, sys, time
+ab, session = sys.argv[1], sys.argv[2]
+for ch in sys.stdin.read():
+    subprocess.run([ab, "--session", session, "keyboard", "type", ch], capture_output=True)
+    time.sleep(0.02)
+' "$AB" "$session"
+    out="✓ Done"; code=0
+  else
+    out=""; code=1
+  fi
+else
+  out=$("$AB" "$@" 2>"$err"); code=$?
+fi
+
+[ -n "$out" ] && printf '%s\n' "$out"
+[ -s "$err" ] && cat "$err" >&2
+# `is` responde true/false com saída 0 ou 1: vale o código de saída.
+if [ "$code" -eq 0 ]; then ok=true; else ok=false; fi
+log_event "$ok" "$(printf '%s' "$out" | head -c 200)"
+exit "$code"

@@ -1,0 +1,29 @@
+#!/bin/sh
+# Rede e erros da página do painel, em JSON compacto, pro card do plugin
+# navegador. Roda ../assets/net.js dentro da própria página pelo agent-browser
+# (sem `terminal-browser action`): não acende o indicador de "agente mexendo"
+# na aba nem gera evento, e só enxerga a aba do painel (o log de rede do
+# agent-browser misturava as abas de outras sessões do mesmo processo).
+#
+# Saída: {"requests":[{"m","u","s","t"}...],"console":[{"type","text"}...]}
+# Uso: tb-net [clear]. Sem jq, a coluna de rede fica vazia.
+empty='{"requests":[],"console":[]}'
+command -v jq >/dev/null 2>&1 || { echo "$empty"; exit 0; }
+here=$(cd "$(dirname "$0")" && pwd)
+export AGENT_BROWSER_SOCKET_DIR="$HOME/.tbab"
+root=$(dirname "$(dirname "$(readlink -f "$(command -v terminal-browser)")")")
+AB="$root/agent-browser/bin/agent-browser"
+
+# TB_KEY: o navegador desta sessão, que o plugin acha pelo tty. Sem ele, o
+# primeiro da aba do terminal (com duas sessões abertas, pode ser o outro).
+key="${TB_KEY:-}"
+[ -z "$key" ] && key=$(terminal-browser ls --json 2>/dev/null | jq -r '[.browsers[] | select(.inCurrentTab)][0].key // empty')
+[ -z "$key" ] && { echo "$empty"; exit 0; }
+
+clear=false
+[ "${1:-}" = clear ] && clear=true
+js=$(jq -rn --rawfile tpl "$here/../assets/net.js" --arg clear "$clear" '$tpl | gsub("\\$CLEAR"; $clear)')
+out=$("$AB" --session "terminal-browser-$key" eval "$js" 2>/dev/null \
+  | jq -c '{requests: (.requests // []), console: (.console // [])}' 2>/dev/null)
+[ "$clear" = true ] && exit 0
+echo "${out:-$empty}"

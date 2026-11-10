@@ -1,0 +1,24 @@
+{
+  "name": "navegador",
+  "version": "0.2.0",
+  "description": "Navegador (terminal-browser) no painel do Claude Code, com card de status do que o agente faz na página: passos, verificações e rede. Fork do plugin terminal-browser 0.0.2 (zenbu-labs, MIT).",
+  "author": {
+    "name": "Oscar Andreazza"
+  },
+  "license": "MIT",
+  "userConfig": {
+    "agentTool": {
+      "type": "boolean",
+      "title": "Dar ao agente uma ferramenta pra abrir/fechar o navegador no painel",
+      "description": "Registra mcp__navegador__open e mcp__navegador__close.",
+      "default": true
+    },
+    "background": {
+      "type": "string",
+      "title": "Cor de fundo do painel",
+      "description": "Pintada atrás do navegador e do card (sem tinta, o texto da conversa vaza por trás do painel). Hex ou nome de cor; padrão #050505, quase preto. Em tema claro, use a cor de fundo do seu terminal.",
+      "default": "#050505"
+    }
+  },
+  "types": "./types/index.d.ts"
+}

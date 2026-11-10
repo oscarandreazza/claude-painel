@@ -1,0 +1,12 @@
+#!/bin/sh
+# Code mode do plugin navegador: grava o que a pessoa faz no navegador do
+# painel e gera um roteiro do tb-run (detalhes em ../runner/tb-record.mjs).
+# Na primeira vez instala o playwright-core (sem baixar navegador) em ../runner.
+here=$(cd "$(dirname "$0")" && pwd)
+runner="$here/../runner"
+command -v node >/dev/null 2>&1 || { echo "✗ tb-run: precisa do node (18+)"; exit 2; }
+if [ ! -d "$runner/node_modules/playwright-core" ]; then
+  (cd "$runner" && npm install --no-audit --no-fund --silent --no-bin-links >/dev/null 2>&1) \
+    || { echo "✗ tb-run: não consegui instalar o playwright-core em $runner (rode npm install lá)"; exit 2; }
+fi
+exec node "$runner/tb-record.mjs" "$@"

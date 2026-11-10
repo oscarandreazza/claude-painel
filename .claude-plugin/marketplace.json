@@ -1,0 +1,21 @@
+{
+  "name": "painel",
+  "owner": {
+    "name": "Oscar Andreazza"
+  },
+  "metadata": {
+    "description": "Navegador e VS Code no painel ao lado da conversa do Claude Code, com testes e2e em roteiro e evidência compartilhável."
+  },
+  "plugins": [
+    {
+      "name": "navegador",
+      "source": "./navegador",
+      "description": "Navegador de verdade no painel, com card das ações do agente; code mode (tb-look/tb-run) pra testes e2e com vídeo, rede e console, e envio da evidência como link."
+    },
+    {
+      "name": "vscode-live",
+      "source": "./vscode-live",
+      "description": "/vscode: VS Code web no painel, na pasta da sessão; a aba do arquivo que o Claude edita anima e as linhas mudadas acendem."
+    }
+  ]
+}

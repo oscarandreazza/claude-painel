@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+# MCP configurado localmente por quem desenvolve; não faz parte dos plugins.
+.mcp.json
+.env
+.env.*

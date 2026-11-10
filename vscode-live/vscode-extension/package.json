@@ -1,0 +1,312 @@
+{
+  "name": "claude-live",
+  "displayName": "Claude Live",
+  "description": "Mostra ao vivo o que o Claude Code faz: o que lê e o que edita (digitando), os erros que ele encontra e os agentes do Elo; \"Perguntar ao Claude\" a partir do editor.",
+  "version": "0.25.1",
+  "publisher": "oscar",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeLive",
+          "title": "Claude",
+          "icon": "media/projects.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeLive": [
+        {
+          "id": "claudeLive.edited",
+          "name": "Editando"
+        },
+        {
+          "id": "claudeLive.agents",
+          "name": "Agentes",
+          "when": "claudeLive.hasElo"
+        },
+        {
+          "id": "claudeLive.projects",
+          "name": "Pastas"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "claudeLive.edited",
+        "contents": "O que o Claude editar nesta sessão aparece aqui, ao vivo: o arquivo em edição, a árvore até ele e o +/− de cada um."
+      }
+    ],
+    "commands": [
+      {
+        "command": "claudeLive.openDiff",
+        "title": "Ver o que o Claude mudou"
+      },
+      {
+        "command": "claudeLive.switchFolder",
+        "title": "Trocar de pasta",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.openFolder",
+        "title": "Abrir no VS Code",
+        "icon": "$(folder-opened)",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.openFolderBeside",
+        "title": "Abrir ao lado",
+        "icon": "$(split-horizontal)",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.refreshFolders",
+        "title": "Atualizar",
+        "icon": "$(refresh)",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.foldersHome",
+        "title": "Voltar pra pasta da sessão",
+        "icon": "$(home)",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.foldersUp",
+        "title": "Subir um nível",
+        "icon": "$(arrow-up)",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.ask",
+        "title": "Perguntar ao Claude…",
+        "icon": "$(comment-discussion)",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.sendSelection",
+        "title": "Mandar trecho pro prompt do Claude",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.pickTheme",
+        "title": "Trocar o tema",
+        "icon": "$(paintcan)",
+        "category": "Claude Live"
+      },
+      {
+        "command": "claudeLive.refreshAgents",
+        "title": "Atualizar agentes",
+        "icon": "$(refresh)",
+        "category": "Claude Live"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "claudeLive.switchFolder",
+        "key": "ctrl+alt+o"
+      },
+      {
+        "command": "workbench.action.files.save",
+        "key": "ctrl+s",
+        "when": "editorTextFocus || activeEditor"
+      },
+      {
+        "command": "claudeLive.ask",
+        "key": "ctrl+alt+k",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "editor.action.formatDocument",
+        "key": "ctrl+alt+f",
+        "when": "editorTextFocus && !editorReadonly"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Live",
+      "properties": {
+        "claudeLive.projectsRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Raiz fixa da aba Pastas e da busca rápida. Vazio: a pasta onde a sessão do Claude começou."
+        },
+        "claudeLive.openAs": {
+          "type": "string",
+          "enum": [
+            "diff",
+            "file"
+          ],
+          "default": "diff",
+          "description": "Ao terminar uma edição do Claude, abrir o diff (antes × depois) ou o arquivo."
+        },
+        "claudeLive.openTabs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Com openAs = file, abrir numa aba o arquivo que o Claude editou."
+        },
+        "claudeLive.session": {
+          "type": "string",
+          "default": "",
+          "description": "Id da sessão do Claude Code cujas edições esta janela mostra. O /vscode grava no workspace; vazio mostra todas."
+        },
+        "claudeLive.typewriter": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mostrar o texto novo sendo digitado, com cursor, antes do brilho."
+        },
+        "claudeLive.typingSpeed": {
+          "type": "number",
+          "default": 18,
+          "minimum": 1,
+          "description": "Milissegundos por caractere na digitação ao vivo (cada edição fica entre 0,6 e 2,5 s)."
+        },
+        "claudeLive.revealInExplorer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Expandir o Explorer até o arquivo que o Claude está editando e selecioná-lo (quando followInSidebar está desligado)."
+        },
+        "claudeLive.sessionFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Pasta onde a sessão do Claude começou. O /vscode grava no workspace; o botão de casa da aba Pastas volta pra ela."
+        },
+        "claudeLive.showReads": {
+          "type": "boolean",
+          "default": true,
+          "description": "Abrir e pintar de azul o trecho que o Claude está lendo."
+        },
+        "claudeLive.blackBackground": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fundo preto por cima de qualquer tema (liga e desliga no 🎨 da barra de status)."
+        },
+        "claudeLive.followInSidebar": {
+          "type": "boolean",
+          "default": false,
+          "description": "Quando o Claude começa a editar, levar a barra lateral pra aba \"Claude\" › Editando. Desligado (padrão): o Explorer abre até o arquivo e seleciona."
+        },
+        "claudeLive.impactMap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mapa de impacto: marcar com ⇠ no Explorer quem importa os arquivos editados pelo Claude (TS/JS) e listar em \"usado por\" na árvore Editando."
+        }
+      }
+    },
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "claudeLive.openFolder",
+          "when": "view == claudeLive.projects && viewItem == claudeLive.folder",
+          "group": "inline@1"
+        },
+        {
+          "command": "claudeLive.openFolderBeside",
+          "when": "view == claudeLive.projects && viewItem == claudeLive.folder",
+          "group": "inline@2"
+        },
+        {
+          "command": "claudeLive.openFolder",
+          "when": "view == claudeLive.projects && viewItem == claudeLive.folder",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeLive.openFolderBeside",
+          "when": "view == claudeLive.projects && viewItem == claudeLive.folder",
+          "group": "navigation@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "claudeLive.foldersHome",
+          "when": "view == claudeLive.projects",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeLive.foldersUp",
+          "when": "view == claudeLive.projects",
+          "group": "navigation@2"
+        },
+        {
+          "command": "claudeLive.refreshFolders",
+          "when": "view == claudeLive.projects",
+          "group": "navigation@3"
+        },
+        {
+          "command": "claudeLive.refreshAgents",
+          "when": "view == claudeLive.agents",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "claudeLive.openFolder",
+          "when": "false"
+        },
+        {
+          "command": "claudeLive.openFolderBeside",
+          "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "claudeLive.ask",
+          "group": "0_claude@1"
+        },
+        {
+          "command": "claudeLive.sendSelection",
+          "when": "editorHasSelection",
+          "group": "0_claude@2"
+        }
+      ]
+    },
+    "colors": [
+      {
+        "id": "claudeLive.edited",
+        "description": "Arquivos e pastas editados pelo Claude nesta sessão (Explorer e abas).",
+        "defaults": {
+          "dark": "#73c991",
+          "light": "#388a34",
+          "highContrast": "#73c991"
+        }
+      },
+      {
+        "id": "claudeLive.read",
+        "description": "Arquivo que o Claude está lendo ou que uma busca dele achou (por alguns segundos).",
+        "defaults": {
+          "dark": "#78a0ff",
+          "light": "#3d6bd6",
+          "highContrast": "#78a0ff"
+        }
+      },
+      {
+        "id": "claudeLive.impact",
+        "description": "Arquivo que importa um arquivo editado pelo Claude (pode ter sido afetado).",
+        "defaults": {
+          "dark": "#e5a84b",
+          "light": "#a8701a",
+          "highContrast": "#e5a84b"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "navegador-runner",
+  "private": true,
+  "type": "module",
+  "description": "tb-run: roda um roteiro Playwright no navegador do painel (code mode do plugin navegador).",
+  "dependencies": {
+    "playwright-core": "1.56.1"
+  }
+}
