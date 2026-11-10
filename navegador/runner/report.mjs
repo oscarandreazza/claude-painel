@@ -192,6 +192,51 @@ const REPORT_JS = String.raw`(() => {
 })()`
 
 /**
+ * Dados estruturados da execução (manifest v3): a página de evidências monta
+ * a tela a partir disto (vídeo, quadro horário, passos, rede, console). Caminhos
+ * relativos à pasta do relatório; rede e console já vêm mascarados da captura.
+ */
+export function buildData(dir, { title, results, video, startedAt, totalMs, screen, flags }) {
+  const runs = results.flatMap(r => r.runs.map((res, i) => ({ res, round: r.runs.length > 1 ? i + 1 : null, rounds: r.runs.length })))
+  let host = ''
+  try { host = new URL(runs.find(x => x.res.firstUrl)?.res.firstUrl ?? '').host } catch {}
+  return {
+    version: 3,
+    title,
+    passed: runs.every(x => !x.res.failure),
+    startedAt,
+    totalMs,
+    screen: screen ?? null,
+    flags: flags ?? [],
+    site: host || null,
+    video: video ? rel(dir, video) : null,
+    scripts: runs.map(({ res, round, rounds }) => {
+      const f = res.failure
+      return {
+        name: res.name === 'stdin' ? 'roteiro' : res.name,
+        round, rounds,
+        passed: !f,
+        ms: res.ms,
+        steps: res.steps.map(s => ({ label: s.label, ok: s.ok, check: s.check, t: s.t ?? null, ms: s.ms ?? null, shot: s.shot ? rel(dir, s.shot) : null })),
+        failure: f ? {
+          stepIndex: f.step ? res.steps.indexOf(f.step) : null,
+          kind: f.kind ?? null,
+          error: f.error,
+          url: f.diag?.url ?? null,
+          pageTitle: f.diag?.title ?? null,
+          shot: f.diag?.shot && f.diag.shot.startsWith(dir) ? rel(dir, f.diag.shot) : null,
+        } : null,
+        notes: res.notes,
+        warnings: res.warnings,
+        jsErrors: res.jsErrors,
+      }
+    }),
+    network: runs.flatMap(x => x.res.network ?? []).sort((a, b) => a.t - b.t),
+    console: runs.flatMap(x => x.res.consoleLog ?? []).sort((a, b) => a.t - b.t),
+  }
+}
+
+/**
  * Escreve <dir>/index.html. results: [{ name, runs: [res] }] com os campos do runOne.
  * meta: { title, startedAt, totalMs, video, screen, flags }
  */
@@ -410,5 +455,6 @@ tr.detail td { background: var(--bg); padding: 10px 12px; }
 `
   const file = path.join(dir, 'index.html')
   fs.writeFileSync(file, html)
+  fs.writeFileSync(path.join(dir, 'data.json'), JSON.stringify(buildData(dir, { title, results, video, startedAt, totalMs, screen, flags })))
   return file
 }

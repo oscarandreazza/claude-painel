@@ -10,7 +10,9 @@
 // ~/.config/navegador/evidencias.env (ou no ambiente):
 //   EVIDENCE_URL=https://evidencias-e2e.<conta>.workers.dev
 //   EVIDENCE_TOKEN=<o mesmo valor do secret UPLOAD_TOKEN do Worker>
+//   EVIDENCE_AUTHOR=<seu nome>   (opcional: senão, o user.name do git)
 
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -33,7 +35,7 @@ function readEnvFile(file) {
 export function loadConfig() {
   const file = readEnvFile(CONFIG_FILE)
   const get = k => process.env[k] || file[k] || ''
-  const cfg = { url: (get('EVIDENCE_URL') || get('EVIDENCE_VIEWER_URL')).replace(/\/+$/, ''), token: get('EVIDENCE_TOKEN') }
+  const cfg = { url: (get('EVIDENCE_URL') || get('EVIDENCE_VIEWER_URL')).replace(/\/+$/, ''), token: get('EVIDENCE_TOKEN'), author: get('EVIDENCE_AUTHOR') }
   const missing = [!cfg.url && 'EVIDENCE_URL', !cfg.token && 'EVIDENCE_TOKEN'].filter(Boolean)
   if (missing.length) throw new Error(`falta ${missing.join(' e ')} em ${CONFIG_FILE}`)
   if (!/^https:\/\//.test(cfg.url) && !/^http:\/\/127\.0\.0\.1:\d+$/.test(cfg.url)) throw new Error(`EVIDENCE_URL tem de ser https:// (veio ${cfg.url})`)
@@ -56,6 +58,15 @@ async function api(cfg, route, body) {
   return data
 }
 
+// Quem enviou: EVIDENCE_AUTHOR, senão o nome do git, senão o usuário da máquina.
+// "via Claude Code" quando quem roda é um agente do Claude Code (CLAUDECODE=1).
+function uploader(cfg) {
+  let name = cfg.author
+  if (!name) { try { name = execFileSync('git', ['config', 'user.name'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch {} }
+  if (!name) { try { name = os.userInfo().username } catch {} }
+  return { uploadedBy: (name || 'alguém').slice(0, 80), uploadedVia: process.env.CLAUDECODE === '1' ? 'Claude Code' : null }
+}
+
 async function pool(items, size, fn) {
   const queue = [...items]
   await Promise.all(Array.from({ length: Math.min(size, queue.length) }, async () => {
@@ -70,16 +81,22 @@ async function pool(items, size, fn) {
 export async function uploadEvidence(reportDir, summary) {
   const cfg = loadConfig()
   const rels = fs.readdirSync(reportDir, { recursive: true }).map(String)
-    .filter(p => TYPES[path.extname(p).toLowerCase()] && !p.endsWith('manifest.json'))
+    .filter(p => TYPES[path.extname(p).toLowerCase()] && !p.endsWith('manifest.json') && !p.endsWith('data.json'))
     .map(p => p.split(path.sep).join('/'))
   const html = fs.readFileSync(path.join(reportDir, 'index.html'), 'utf8')
   const sizes = Object.fromEntries(rels.map(r => [r, fs.statSync(path.join(reportDir, r)).size]))
 
+  let data = null
+  try { data = JSON.parse(fs.readFileSync(path.join(reportDir, 'data.json'), 'utf8')) } catch {}
+  const who = uploader(cfg)
+  if (data) Object.assign(data, who)
   const created = await api(cfg, '/api/runs', {
     ...summary,
+    ...who,
+    site: data?.site ?? null,
     files: [...rels.map(r => ({ path: r, size: sizes[r] })), { path: 'manifest.json', size: html.length }],
   })
-  const manifest = Buffer.from(JSON.stringify({ version: 2, id: created.id, title: summary.title, passed: summary.passed, createdAt: new Date().toISOString(), html, files: rels }))
+  const manifest = Buffer.from(JSON.stringify({ version: data ? 3 : 2, id: created.id, title: summary.title, passed: summary.passed, createdAt: new Date().toISOString(), html, data, files: rels }))
 
   const put = async (rel, body) => {
     const up = created.uploads[rel]

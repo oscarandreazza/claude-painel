@@ -27,6 +27,29 @@ o que você faz, então trabalhe de um jeito que dê pra acompanhar.
 4. **Terminar:** sempre `terminal-browser action done`. Fecha o card com o
    relatório e mostra a tela final na página.
 
+## Se o painel não aparecer
+
+Sintomas: `mcp__navegador__open` dá erro ou volta sem chave, o painel não
+desenha, ou `terminal-browser ls` não lista o navegador do painel ("no
+browser", "não achei o navegador"). **Não improvise** um split
+(`terminal-browser open`, `--browser` de outra janela, Chrome de fora): o fluxo
+até roda, mas sem card e sem a pessoa ver. Pare e diga à pessoa o que conferir,
+nesta ordem:
+
+1. `terminal-browser --version` é 0.15 ou mais nova (senão,
+   `brew install terminal-browser` ou `brew upgrade terminal-browser`).
+2. O plugin original `terminal-browser@terminal-browser` está **desligado**
+   (`claude plugin disable terminal-browser@terminal-browser`). É ele que abre
+   o split sem card, e os dois registram `/browser`.
+3. O navegador veio do marketplace (`claude plugin install navegador@painel`),
+   não só de um clone rodado na mão.
+4. O terminal é Ghostty ou kitty, fora do tmux. No Terminal.app e no Warp o
+   painel não desenha.
+5. O Claude Code foi reiniciado depois de instalar ou atualizar (o rodapé
+   "Restart to update" indica versão pendente).
+
+Depois que a pessoa ajustar, chame `mcp__navegador__open` de novo.
+
 ## Como escrever os comandos
 
 - A `description` do Bash vira o título do card: escreva a intenção
