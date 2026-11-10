@@ -216,7 +216,8 @@ export function parseEvents(text: string): ActionEvent[] {
 }
 
 // Só ações sobre um elemento ganham o nome dele no lugar do seletor.
-const ELEMENT_VERBS = ['clicar', 'clicar duas vezes', 'passar o mouse', 'marcar', 'desmarcar', 'focar', 'rolar até', 'destacar']
+// 'digitar' entra pro tb-run: o passo nasce só com o verbo e o texto (ou •••• em campo de senha) chega depois.
+const ELEMENT_VERBS = ['clicar', 'clicar duas vezes', 'passar o mouse', 'marcar', 'desmarcar', 'focar', 'rolar até', 'destacar', 'digitar']
 
 /**
  * Troca o seletor do fim do rótulo ("clicar @e12", "marcar .todo li input")

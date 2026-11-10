@@ -16,7 +16,20 @@ claude plugin install navegador@painel
 claude plugin install vscode-live@painel
 ```
 
-Depois, `/reload-plugins` (ou reinicie o Claude Code).
+Depois, `/reload-plugins` (ou reinicie o Claude Code). O Claude Code baixa o
+repositório sozinho; pra pegar versões novas: `claude plugin marketplace update painel`.
+
+### Instalar a partir de um clone (pra mexer no código)
+
+```bash
+git clone https://github.com/oscarandreazza/claude-painel.git ~/projects/claude-painel
+claude plugin marketplace add ~/projects/claude-painel
+claude plugin install navegador@painel
+claude plugin install vscode-live@painel
+```
+
+Aqui o marketplace é a pasta local: o Claude Code lê os plugins direto dela.
+Editou, `/reload-plugins` e já vale; pra atualizar, `git pull`.
 
 ## O que precisa
 

@@ -102,3 +102,8 @@ test('evento rec do tb-run --video liga e desliga a gravação', () => {
   expect(on?.label).toBe('on')
   expect(off?.label).toBe('off')
 })
+
+test('digitar do tb-run ganha o texto (ou ••••) depois, sem mexer no rótulo que já tem texto', () => {
+  expect(relabel('digitar', '••••')).toBe('digitar “••••”')
+  expect(relabel('digitar “oi mundo”', 'outra coisa')).toBe('digitar “oi mundo”')
+})

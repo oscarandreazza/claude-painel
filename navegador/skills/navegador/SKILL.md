@@ -94,7 +94,10 @@ EOF
   card): `click(alvo)`, `fill(alvo, texto)`, `type(alvo, texto)`,
   `select(alvo, valor)`, `hover(alvo)`, `press('Enter')`, `goto(url)`. `alvo`
   é um localizador (`page.getByRole(…)`) ou um seletor em string. Último
-  argumento opcional: o rótulo do passo.
+  argumento opcional: o rótulo do passo. Em `fill`/`type`, o texto digitado
+  vira rótulo (card, relatório, link); campo de senha ou com nome de
+  senha/token/CPF/cartão sai como `••••`, e `{ secret: true }` força
+  (`fill(campo, valor, { secret: true })`).
 - `see(texto, opções)`: texto visível, **palavra inteira e diferenciando
   maiúsculas** (`see('Logado')` não passa em "Deslogado" nem em "logado").
   `{ em: região }` procura só dentro dela (use sempre que a palavra puder

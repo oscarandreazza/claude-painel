@@ -20,7 +20,7 @@ import {
   ariaLines, asset, cleanOrigin, clip, connect, emulate, eventsWriter, fillIn, highlighter,
   removeEndcard, shortError, shot, sleep,
 } from './lib.mjs'
-import { startCapture } from './capture.mjs'
+import { redactUrl, startCapture } from './capture.mjs'
 import { startVideo, writeReport } from './report.mjs'
 import { uploadEvidence } from './upload.mjs'
 
@@ -213,10 +213,11 @@ async function runOne(script, env) {
   }
 
   // Rede e erros da página enquanto o roteiro roda.
-  const onResponse = r => { if (r.status() >= 400) net.push({ m: r.request().method(), u: r.url(), s: r.status() }) }
+  // URLs passam pela mesma máscara da aba Rede: vão pro relatório e pro link compartilhado.
+  const onResponse = r => { if (r.status() >= 400) net.push({ m: r.request().method(), u: redactUrl(r.url()), s: r.status() }) }
   const onFailed = r => {
     const why = r.failure()?.errorText ?? 'falhou'
-    if (!/ERR_ABORTED/.test(why)) net.push({ m: r.method(), u: r.url(), s: why })
+    if (!/ERR_ABORTED/.test(why)) net.push({ m: r.method(), u: redactUrl(r.url()), s: why })
   }
   // Erro de recurso (404 de imagem…) já aparece na rede: aqui só JavaScript.
   const onPageError = e => jsErrors.push(clip(e.message, 200))
@@ -287,6 +288,29 @@ async function runOne(script, env) {
     }, false)
   }
 
+  // fill/type: o texto vira rótulo do passo (card, legenda, relatório, link).
+  // Campo de senha, ou com nome de senha/token/CPF/cartão, aparece como ••••;
+  // { secret: true } força. Terceiro argumento: rótulo (string) ou { label, secret }.
+  const SECRET_FIELD = /pass|senha|token|secret|cpf|cnpj|cvv|cvc|card|cart[aã]o|pin\b|otp/i
+  const typeInto = (target, text, opt, sequential) => {
+    const o = typeof opt === 'string' ? { label: opt } : (opt ?? {})
+    const l = loc(target)
+    return runStep(o.label ?? 'digitar', async s => {
+      await l.first().waitFor({ state: 'visible' })
+      const secret = o.secret || await l.first().evaluate((el, re) => el.type === 'password'
+        || new RegExp(re, 'i').test(`${el.name ?? ''} ${el.id ?? ''} ${el.getAttribute('aria-label') ?? ''} ${el.autocomplete ?? ''} ${el.placeholder ?? ''}`),
+      SECRET_FIELD.source, { timeout: 1_000 }).catch(() => false)
+      const shown = secret ? '••••' : clip(String(text), 36)
+      if (!o.label) {
+        s.label = clip(`digitar “${shown}”`, 80)
+        emit({ cmd: 'step', ok: true, out: '', target: shown, phase: 'start' })
+        await caption(s.label)
+      }
+      await highlight(l, `digitar: ${secret ? '••••' : clip(String(text), 28)}`, false)
+      if (sequential) { await l.fill(''); await l.pressSequentially(String(text), { delay: 25 }) } else await l.fill(String(text))
+    }, false)
+  }
+
   // --limpo também vale pra cada origem nova que o roteiro abrir.
   const goto = (url, label) => runStep(label ?? `abrir ${clip(url.replace(/^https?:\/\//, ''), 50)}`, async () => {
     const res = await page.goto(url)
@@ -341,9 +365,9 @@ async function runOne(script, env) {
     api,
     click: (t, label) => act(t, 'clicar', label, true, l => l.click()),
     hover: (t, label) => act(t, 'passar o mouse', label, false, l => l.hover()),
-    fill: (t, text, label) => act(t, `digitar: ${clip(text, 28)}`, label ?? `digitar “${clip(text, 36)}”`, false, l => l.fill(text)),
+    fill: (t, text, opt) => typeInto(t, text, opt, false),
     // Digitação tecla a tecla, pra campo com máscara (CPF, telefone, valor).
-    type: (t, text, label) => act(t, `digitar: ${clip(text, 28)}`, label ?? `digitar “${clip(text, 36)}”`, false, async l => { await l.fill(''); await l.pressSequentially(text, { delay: 25 }) }),
+    type: (t, text, opt) => typeInto(t, text, opt, true),
     select: (t, value, label) => act(t, `selecionar: ${clip(String(value), 28)}`, label ?? `selecionar “${clip(String(value), 36)}”`, false, l => l.selectOption(value)),
     press: (key, label) => runStep(label ?? `tecla ${key}`, () => page.keyboard.press(key), false),
     // O que o agente quer de volta na saída (valores lidos, contagens…).
@@ -371,13 +395,13 @@ async function runOne(script, env) {
   // Retrato da página na hora da falha (na suíte, o próximo roteiro muda a página).
   if (failure) failure.diag = await snapshotFailure(page, opts, env.reportDir ?? env.dir)
   const captured = stopCapture ? await stopCapture() : { network: [], consoleLog: [] }
-  return { name: script.name, steps, notes, warnings, net, jsErrors, failure, ms: Date.now() - start, firstUrl: page.url(), ...captured }
+  return { name: script.name, steps, notes, warnings, net, jsErrors, failure, ms: Date.now() - start, firstUrl: redactUrl(page.url()), ...captured }
 }
 
 // --- saída ---
 
 async function snapshotFailure(page, opts, dir) {
-  const diag = { url: page.url(), title: await page.title().catch(() => ''), shot: null, aria: [] }
+  const diag = { url: redactUrl(page.url()), title: await page.title().catch(() => ''), shot: null, aria: [] }
   if (opts.shot) {
     const file = path.join(dir, `falha-${Date.now()}.png`)
     if (await shot(page, file, { hideOverlays: true })) diag.shot = file
